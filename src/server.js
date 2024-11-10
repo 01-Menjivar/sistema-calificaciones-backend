@@ -11,17 +11,20 @@ const JWT_SECRET = process.env.JWT_SECRET;
 const JWT_EXPIRES_IN = process.env.JWT_EXPIRES_IN;
 
 function verifyToken(req) {
-    const bearerHeader = req.headers['authorization'];
-    if (!bearerHeader) {
-        return false;
-    }
-
     try {
+        const bearerHeader = req.headers?.['authorization'];
+        console.log('Bearer Header:', bearerHeader); // Debug
+
+        if (!bearerHeader) {
+            console.log('No se encontró el header de autorización');
+            return null;
+        }
+
         const token = bearerHeader.split(' ')[1];
-        const verified = jwt.verify(token, process.env.JWT_SECRET);
-        return verified;
+        return jwt.verify(token, JWT_SECRET);
     } catch (error) {
-        return false;
+        console.error('Error al verificar token:', error);
+        return null;
     }
 }
 
@@ -167,8 +170,13 @@ function registerallkindausers(body, res) {
 }
 
 function listusers(req, res) {
+    console.log('Headers en listusers:', req.headers);
+    
     const verified = verifyToken(req);
+    console.log('Token verificado:', verified);
+
     if (!verified || verified.rol !== 'director') {
+        console.log('Acceso denegado. Rol:', verified?.rol);
         sendResponse(res, 401, { error: 'No autorizado' });
         return;
     }
@@ -176,9 +184,11 @@ function listusers(req, res) {
     const query = 'SELECT id, nombre, email, rol FROM Usuarios WHERE rol != "super-admin"';
     connection.query(query, (err, results) => {
         if (err) {
+            console.error('Error en la consulta:', err);
             sendResponse(res, 500, { error: 'Error al obtener la lista de usuarios' });
             return;
         }
+        console.log('Resultados encontrados:', results.length);
         sendResponse(res, 200, results);
     });
 }
@@ -417,6 +427,8 @@ const server = http.createServer((req, res) => {
     // Configurar CORS
     setCORSHeaders(res);
 
+    console.log('Request Headers:', req.headers);
+
     // Manejar preflight requests
     if (req.method === 'OPTIONS') {
         sendResponse(res, 204, null);
@@ -467,7 +479,9 @@ const server = http.createServer((req, res) => {
                 const studentId = url.split('/')[4];
                 getStudentGradesWithAverage(studentId, res);
             } else if (url === '/api/listusers' && method === 'GET') {
-                listusers(res);
+                listusers(req,res);
+                return;
+
             }else if (url === '/api/registerallkindausers' && method === 'POST'){
                 registerallkindausers(body,res);
             }else if(url.startsWith('/api/edit-task/') && method === 'PUT'){
