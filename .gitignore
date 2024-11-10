@@ -1,0 +1,27 @@
+# Dependencias
+/node_modules
+package-lock.json
+
+# Variables de entorno
+.env
+.env.local
+.env.development
+.env.production
+
+# Logs
+*.log
+npm-debug.log*
+
+# Archivos del sistema
+.DS_Store
+Thumbs.db
+
+# IDEs y editores
+.idea/
+.vscode/
+*.sublime-project
+*.sublime-workspace
+
+# Archivos temporales
+*.tmp
+*~
