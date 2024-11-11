@@ -257,24 +257,81 @@ function getTotalUsers(res) {
 /** FUNCIONES PARA PROFESOR **/
 
 function assignTask(body, res) {
-    const { titulo, descripcion, fecha_asignacion, fecha_entrega, ponderacion, estado, recursos, nivel_dificultad } = JSON.parse(body);
-    const query = `
-        INSERT INTO Tareas (titulo, descripcion, fecha_asignacion, fecha_entrega, ponderacion, estado, recursos, nivel_dificultad) 
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-    `;
-    connection.query(query, 
-        [titulo, descripcion, fecha_asignacion, fecha_entrega, ponderacion, estado, recursos, nivel_dificultad], 
-        (err, result) => {
-            if (err) {
-                sendResponse(res, 500, { error: 'Error al asignar la tarea' });
-                return;
-            }
-            sendResponse(res, 201, { 
-                message: 'Tarea asignada con éxito', 
-                taskId: result.insertId 
-            });
+    try {
+        const data = JSON.parse(body);
+        const { titulo, descripcion, fecha_asignacion, fecha_entrega, ponderacion, recursos, nivel_dificultad } = data;
+
+        // Validaciones
+        if (!titulo || !descripcion || !fecha_entrega || ponderacion === undefined) {
+            sendResponse(res, 400, { error: 'Todos los campos obligatorios deben estar completos' });
+            return;
         }
-    );
+
+        // Validar ponderación
+        const pondValue = parseFloat(ponderacion);
+        if (isNaN(pondValue) || pondValue < 0 || pondValue > 100) {
+            sendResponse(res, 400, { error: 'La ponderación debe ser un número entre 0 y 100' });
+            return;
+        }
+
+        // Validar fechas
+        const fechaAsig = fecha_asignacion || new Date().toISOString().split('T')[0];
+        if (new Date(fecha_entrega) < new Date(fechaAsig)) {
+            sendResponse(res, 400, { error: 'La fecha de entrega no puede ser anterior a la fecha de asignación' });
+            return;
+        }
+
+        // Validar nivel de dificultad
+        const nivelesPermitidos = ['fácil', 'facil', 'media', 'difícil', 'dificil'];
+        if (!nivelesPermitidos.includes(nivel_dificultad.toLowerCase())) {
+            sendResponse(res, 400, { error: 'Nivel de dificultad no válido' });
+            return;
+        }
+
+        const query = `
+            INSERT INTO Tareas (
+                titulo, 
+                descripcion, 
+                fecha_asignacion, 
+                fecha_entrega, 
+                ponderacion, 
+                estado, 
+                recursos, 
+                nivel_dificultad
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `;
+
+        connection.query(
+            query, 
+            [
+                titulo,
+                descripcion,
+                fechaAsig,
+                fecha_entrega,
+                pondValue,
+                'pendiente', 
+                recursos || null,
+                nivel_dificultad
+            ], 
+            (err, result) => {
+                if (err) {
+                    console.error('Error en la base de datos:', err);
+                    sendResponse(res, 500, { 
+                        error: 'Error al asignar la tarea',
+                        details: process.env.NODE_ENV === 'development' ? err.message : undefined
+                    });
+                    return;
+                }
+                sendResponse(res, 201, { 
+                    message: 'Tarea asignada con éxito', 
+                    taskId: result.insertId 
+                });
+            }
+        );
+    } catch (error) {
+        console.error('Error al procesar la solicitud:', error);
+        sendResponse(res, 500, { error: 'Error interno del servidor' });
+    }
 }
 
 function deletetask(taskId, res) {
@@ -289,22 +346,64 @@ function deletetask(taskId, res) {
 }
 
 function editTask(taskId, body, res) {
-    const { titulo, descripcion, fecha_entrega, ponderacion, recursos, nivel_dificultad } = JSON.parse(body);
-    const query = `
-        UPDATE Tareas 
-        SET titulo = ?, descripcion = ?, fecha_entrega = ?, ponderacion = ?, recursos = ?, nivel_dificultad = ? 
-        WHERE id = ?
-    `;
-    connection.query(query, 
-        [titulo, descripcion, fecha_entrega, ponderacion, recursos, nivel_dificultad, taskId], 
-        (err, result) => {
+    try {
+        const data = JSON.parse(body);
+        const { titulo, descripcion, fecha_entrega, ponderacion, recursos, nivel_dificultad } = data;
+
+        // Normalizar nivel_dificultad (quitar tildes y convertir a minúsculas)
+        const normalizeDificultad = (nivel) => {
+            const normalizado = nivel.toLowerCase()
+                .normalize("NFD")
+                .replace(/[\u0300-\u036f]/g, "");
+            
+            // Mapeo de valores permitidos
+            const valoresPermitidos = {
+                'facil': 'facil',
+                'media': 'media',
+                'dificil': 'dificil'
+            };
+
+            return valoresPermitidos[normalizado] || 'media';
+        };
+
+        const nivelNormalizado = normalizeDificultad(nivel_dificultad);
+
+        const updateQuery = `
+            UPDATE Tareas 
+            SET 
+                titulo = ?,
+                descripcion = ?,
+                fecha_entrega = ?,
+                ponderacion = ?,
+                recursos = ?,
+                nivel_dificultad = ?
+            WHERE id = ?
+        `;
+
+        const values = [
+            titulo,
+            descripcion,
+            fecha_entrega,
+            ponderacion,
+            recursos || null,
+            nivelNormalizado,
+            taskId
+        ];
+
+        console.log('Valores normalizados:', values);
+
+        connection.query(updateQuery, values, (err, result) => {
             if (err) {
+                console.error('Error en la actualización:', err);
                 sendResponse(res, 500, { error: 'Error al editar la tarea' });
                 return;
             }
             sendResponse(res, 200, { message: 'Tarea editada con éxito' });
-        }
-    );
+        });
+    } catch (error) {
+        console.error('Error al procesar la solicitud:', error);
+        sendResponse(res, 500, { error: 'Error interno del servidor' });
+    }
 }
 
 function viewAssignedTasks(res) {
@@ -370,6 +469,61 @@ function addGrade(taskId, studentId, grade, res) {
             message: 'Calificación agregada con éxito', 
             gradeId: result.insertId 
         });
+    });
+}
+
+
+// Obtener lista de estudiantes
+function getStudents(res) {
+    const query = 'SELECT id, nombre, email FROM Usuarios WHERE rol = "estudiante"';
+    connection.query(query, (err, results) => {
+        if (err) {
+            sendResponse(res, 500, { error: 'Error al obtener la lista de estudiantes' });
+            return;
+        }
+        sendResponse(res, 200, results);
+    });
+}
+
+// Obtener entregas y calificaciones por tarea
+function getTaskSubmissions(taskId, res) {
+    const query = `
+        SELECT 
+            c.id, 
+            c.tarea_id,
+            c.estudiante_id,
+            c.calificacion,
+            c.fecha_calificacion,
+            u.nombre as estudiante_nombre,
+            u.email as estudiante_email,
+            t.titulo as tarea_titulo,
+            t.ponderacion
+        FROM Calificaciones c
+        RIGHT JOIN Usuarios u ON c.estudiante_id = u.id
+        LEFT JOIN Tareas t ON c.tarea_id = t.id
+        WHERE t.id = ? AND u.rol = "estudiante"
+    `;
+    
+    connection.query(query, [taskId], (err, results) => {
+        if (err) {
+            sendResponse(res, 500, { error: 'Error al obtener las entregas' });
+            return;
+        }
+        sendResponse(res, 200, results);
+    });
+}
+
+// Actualizar estado de tarea
+function updateTaskStatus(taskId, body, res) {
+    const { estado } = JSON.parse(body);
+    const query = 'UPDATE Tareas SET estado = ? WHERE id = ?';
+    
+    connection.query(query, [estado, taskId], (err, result) => {
+        if (err) {
+            sendResponse(res, 500, { error: 'Error al actualizar el estado de la tarea' });
+            return;
+        }
+        sendResponse(res, 200, { message: 'Estado de tarea actualizado con éxito' });
     });
 }
 
@@ -496,6 +650,14 @@ const server = http.createServer((req, res) => {
             else if (url === '/api/professor/add-grade' && method === 'POST') {
                     const { taskId, studentId, grade } = JSON.parse(body);
                     addGrade(taskId, studentId, grade, res);
+            } else if (url === '/api/students' && method === 'GET') {
+                getStudents(res);
+            } else if (url.startsWith('/api/task-submissions/') && method === 'GET') {
+                const taskId = url.split('/')[3];
+                getTaskSubmissions(taskId, res);
+            } else if (url.startsWith('/api/task-status/') && method === 'PUT') {
+                const taskId = url.split('/')[3];
+                updateTaskStatus(taskId, body, res);
             }
             else {
                 sendResponse(res, 404, { error: 'Ruta no encontrada' });
