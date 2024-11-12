@@ -181,7 +181,7 @@ function listusers(req, res) {
         return;
     }
 
-    const query = 'SELECT id, nombre, email, rol FROM Usuarios WHERE rol != "super-admin"';
+    const query = 'SELECT id, nombre, email, rol FROM Usuarios WHERE rol != "director"';
     connection.query(query, (err, results) => {
         if (err) {
             console.error('Error en la consulta:', err);
@@ -454,22 +454,82 @@ function countPendingGrades(res) {
     });
 }
 
-function addGrade(taskId, studentId, grade, res) {
-    const date = new Date().toISOString().split('T')[0];
-    const query = `
-        INSERT INTO Calificaciones (tarea_id, estudiante_id, calificacion, fecha_calificacion)
-        VALUES (?, ?, ?, ?)
-    `;
-    connection.query(query, [taskId, studentId, grade, date], (err, result) => {
-        if (err) {
-            sendResponse(res, 500, { error: 'Error al agregar la calificación' });
+function addGrade(body, res) {
+    try {
+        console.log('Body recibido para calificación:', body);
+        const parsedData = JSON.parse(body);
+        console.log('Datos parseados:', parsedData);
+
+        const { taskId, studentId, grade } = parsedData;
+
+        // Validar datos
+        if (!taskId || !studentId || grade === undefined) {
+            sendResponse(res, 400, { error: 'Faltan datos requeridos' });
             return;
         }
-        sendResponse(res, 201, { 
-            message: 'Calificación agregada con éxito', 
-            gradeId: result.insertId 
+
+        const date = new Date().toISOString().split('T')[0];
+        
+        // Primero verificar si existe el registro
+        const checkQuery = 'SELECT id FROM Calificaciones WHERE tarea_id = ? AND estudiante_id = ?';
+        
+        connection.query(checkQuery, [taskId, studentId], (checkErr, checkResults) => {
+            if (checkErr) {
+                console.error('Error al verificar registro:', checkErr);
+                sendResponse(res, 500, { error: 'Error al verificar registro' });
+                return;
+            }
+
+            if (checkResults.length > 0) {
+                // Actualizar registro existente
+                const updateQuery = `
+                    UPDATE Calificaciones 
+                    SET calificacion = ?,
+                        fecha_calificacion = ?,
+                        estado = 'entregado'
+                    WHERE tarea_id = ? AND estudiante_id = ?
+                `;
+
+                connection.query(updateQuery, [grade, date, taskId, studentId], (updateErr) => {
+                    if (updateErr) {
+                        console.error('Error al actualizar calificación:', updateErr);
+                        sendResponse(res, 500, { error: 'Error al actualizar calificación' });
+                        return;
+                    }
+
+                    sendResponse(res, 200, {
+                        success: true,
+                        message: 'Calificación actualizada exitosamente',
+                        data: { grade, estado: 'entregado' }
+                    });
+                });
+            } else {
+                // Insertar nuevo registro
+                const insertQuery = `
+                    INSERT INTO Calificaciones 
+                    (tarea_id, estudiante_id, calificacion, fecha_calificacion, estado)
+                    VALUES (?, ?, ?, ?, 'entregado')
+                `;
+
+                connection.query(insertQuery, [taskId, studentId, grade, date], (insertErr) => {
+                    if (insertErr) {
+                        console.error('Error al insertar calificación:', insertErr);
+                        sendResponse(res, 500, { error: 'Error al crear calificación' });
+                        return;
+                    }
+
+                    sendResponse(res, 201, {
+                        success: true,
+                        message: 'Calificación agregada exitosamente',
+                        data: { grade, estado: 'entregado' }
+                    });
+                });
+            }
         });
-    });
+    } catch (error) {
+        console.error('Error al procesar calificación:', error);
+        sendResponse(res, 400, { error: 'Error en el formato de los datos' });
+    }
 }
 
 
@@ -489,26 +549,26 @@ function getStudents(res) {
 function getTaskSubmissions(taskId, res) {
     const query = `
         SELECT 
-            c.id, 
+            c.id,
             c.tarea_id,
             c.estudiante_id,
             c.calificacion,
             c.fecha_calificacion,
+            c.estado,
             u.nombre as estudiante_nombre,
-            u.email as estudiante_email,
-            t.titulo as tarea_titulo,
-            t.ponderacion
+            u.email as estudiante_email
         FROM Calificaciones c
-        RIGHT JOIN Usuarios u ON c.estudiante_id = u.id
-        LEFT JOIN Tareas t ON c.tarea_id = t.id
-        WHERE t.id = ? AND u.rol = "estudiante"
+        RIGHT JOIN Usuarios u ON c.estudiante_id = u.id AND c.tarea_id = ?
+        WHERE u.rol = 'estudiante'
     `;
     
     connection.query(query, [taskId], (err, results) => {
         if (err) {
+            console.error('Error al obtener submissions:', err);
             sendResponse(res, 500, { error: 'Error al obtener las entregas' });
             return;
         }
+        console.log('Submissions obtenidas:', results);
         sendResponse(res, 200, results);
     });
 }
@@ -525,6 +585,87 @@ function updateTaskStatus(taskId, body, res) {
         }
         sendResponse(res, 200, { message: 'Estado de tarea actualizado con éxito' });
     });
+}
+
+function updateSubmissionStatus(body, res) {
+    try {
+        console.log('Body recibido:', body);
+        const { taskId, studentId, estado } = JSON.parse(body);
+        
+        console.log('Datos a procesar:', { taskId, studentId, estado });
+
+        // Verificar que tenemos todos los datos necesarios
+        if (!taskId || !studentId || !estado) {
+            console.error('Datos incompletos:', { taskId, studentId, estado });
+            sendResponse(res, 400, { error: 'Datos incompletos' });
+            return;
+        }
+
+        const checkQuery = 'SELECT id FROM Calificaciones WHERE tarea_id = ? AND estudiante_id = ?';
+        
+        connection.query(checkQuery, [taskId, studentId], (checkErr, checkResults) => {
+            if (checkErr) {
+                console.error('Error en checkQuery:', checkErr);
+                sendResponse(res, 500, { error: 'Error al verificar el registro' });
+                return;
+            }
+
+            if (checkResults.length > 0) {
+                // Actualizar registro existente
+                const updateQuery = `
+                    UPDATE Calificaciones 
+                    SET estado = ?,
+                        calificacion = CASE 
+                            WHEN ? = 'pendiente' THEN NULL 
+                            ELSE calificacion 
+                        END,
+                        fecha_calificacion = CASE 
+                            WHEN ? = 'pendiente' THEN NULL 
+                            ELSE fecha_calificacion 
+                        END
+                    WHERE tarea_id = ? AND estudiante_id = ?
+                `;
+                
+                connection.query(updateQuery, [estado, estado, estado, taskId, studentId], (updateErr) => {
+                    if (updateErr) {
+                        console.error('Error en updateQuery:', updateErr);
+                        sendResponse(res, 500, { error: 'Error al actualizar el estado' });
+                        return;
+                    }
+                    
+                    console.log('Estado actualizado exitosamente');
+                    sendResponse(res, 200, { 
+                        success: true,
+                        message: 'Estado actualizado con éxito' 
+                    });
+                });
+            } else {
+                // Crear nuevo registro
+                const insertQuery = `
+                    INSERT INTO Calificaciones 
+                    (tarea_id, estudiante_id, estado, calificacion, fecha_calificacion) 
+                    VALUES (?, ?, ?, NULL, NULL)
+                `;
+                
+                connection.query(insertQuery, [taskId, studentId, estado], (insertErr) => {
+                    if (insertErr) {
+                        console.error('Error en insertQuery:', insertErr);
+                        sendResponse(res, 500, { error: 'Error al crear el registro' });
+                        return;
+                    }
+                    
+                    console.log('Nuevo registro creado exitosamente');
+                    sendResponse(res, 201, { 
+                        success: true,
+                        message: 'Estado creado con éxito' 
+                    });
+                });
+            }
+        });
+    } catch (error) {
+        console.error('Error al procesar la solicitud:', error);
+        sendResponse(res, 500, { error: 'Error interno del servidor' });
+    }
 }
 
 /** FUNCIONES PARA USUARIO Y PROFESOR **/
@@ -648,8 +789,7 @@ const server = http.createServer((req, res) => {
                 listTasks(res);
             }
             else if (url === '/api/professor/add-grade' && method === 'POST') {
-                    const { taskId, studentId, grade } = JSON.parse(body);
-                    addGrade(taskId, studentId, grade, res);
+                    addGrade(body, res);
             } else if (url === '/api/students' && method === 'GET') {
                 getStudents(res);
             } else if (url.startsWith('/api/task-submissions/') && method === 'GET') {
@@ -658,7 +798,9 @@ const server = http.createServer((req, res) => {
             } else if (url.startsWith('/api/task-status/') && method === 'PUT') {
                 const taskId = url.split('/')[3];
                 updateTaskStatus(taskId, body, res);
-            }
+            } else if (url === '/api/update-submission-status' && method === 'POST') {
+    updateSubmissionStatus(body, res);
+}
             else {
                 sendResponse(res, 404, { error: 'Ruta no encontrada' });
             }
