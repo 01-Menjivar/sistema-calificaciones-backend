@@ -30,7 +30,7 @@ function verifyToken(req) {
 
 // Funciones de utilidad para CORS y respuestas
 function setCORSHeaders(res) {
-    res.setHeader('Access-Control-Allow-Origin', 'http://127.0.0.1:5500');  // URL de tu frontend
+    res.setHeader('Access-Control-Allow-Origin', '*');  // URL de tu frontend
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
     res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
