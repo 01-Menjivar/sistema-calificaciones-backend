@@ -38,7 +38,7 @@ function setCORSHeaders(res) {
 }
 
 function sendResponse(res, statusCode, data) {
-    res.writeHead(statusCode, { 
+    res.writeHead(statusCode, {
         'Content-Type': 'application/json'
     });
     res.end(JSON.stringify(data));
@@ -80,11 +80,30 @@ connection.on('error', (err) => {
 
 /** FUNCIONES GENERALES **/
 
+
+//Funcion para cerrar sesion
+function handleLogout(req, res) {
+    try {
+        // Obtener el token del header
+        const token = req.headers.authorization?.split(' ')[1];
+
+        if (!token) {
+            sendResponse(res, 400, { error: 'No token provided' });
+            return;
+        }
+
+        sendResponse(res, 200, { message: 'Logout successful' });
+    } catch (error) {
+        console.error('Error en logout:', error);
+        sendResponse(res, 500, { error: 'Error during logout' });
+    }
+}
+
 // Función de Registro de Usuario (General)
 function registerUser(body, res) {
     const { nombre, email, contraseña } = JSON.parse(body);
     const rol = "estudiante";
-    
+
     const salt = generarSalt();
     const hash = salt + generarHashConSalt(contraseña, salt);
 
@@ -94,9 +113,9 @@ function registerUser(body, res) {
             sendResponse(res, 500, { error: 'Error al registrar el estudiante' });
             return;
         }
-        sendResponse(res, 201, { 
-            message: 'Estudiante registrado con éxito', 
-            userId: result.insertId 
+        sendResponse(res, 201, {
+            message: 'Estudiante registrado con éxito',
+            userId: result.insertId
         });
     });
 }
@@ -162,16 +181,16 @@ function registerallkindausers(body, res) {
             sendResponse(res, 500, { error: 'Error al registrar el usuario' });
             return;
         }
-        sendResponse(res, 201, { 
-            message: 'Usuario registrado con éxito', 
-            userId: result.insertId 
+        sendResponse(res, 201, {
+            message: 'Usuario registrado con éxito',
+            userId: result.insertId
         });
     });
 }
 
 function listusers(req, res) {
     console.log('Headers en listusers:', req.headers);
-    
+
     const verified = verifyToken(req);
     console.log('Token verificado:', verified);
 
@@ -302,29 +321,29 @@ function assignTask(body, res) {
         `;
 
         connection.query(
-            query, 
+            query,
             [
                 titulo,
                 descripcion,
                 fechaAsig,
                 fecha_entrega,
                 pondValue,
-                'pendiente', 
+                'pendiente',
                 recursos || null,
                 nivel_dificultad
-            ], 
+            ],
             (err, result) => {
                 if (err) {
                     console.error('Error en la base de datos:', err);
-                    sendResponse(res, 500, { 
+                    sendResponse(res, 500, {
                         error: 'Error al asignar la tarea',
                         details: process.env.NODE_ENV === 'development' ? err.message : undefined
                     });
                     return;
                 }
-                sendResponse(res, 201, { 
-                    message: 'Tarea asignada con éxito', 
-                    taskId: result.insertId 
+                sendResponse(res, 201, {
+                    message: 'Tarea asignada con éxito',
+                    taskId: result.insertId
                 });
             }
         );
@@ -355,7 +374,7 @@ function editTask(taskId, body, res) {
             const normalizado = nivel.toLowerCase()
                 .normalize("NFD")
                 .replace(/[\u0300-\u036f]/g, "");
-            
+
             // Mapeo de valores permitidos
             const valoresPermitidos = {
                 'facil': 'facil',
@@ -469,10 +488,10 @@ function addGrade(body, res) {
         }
 
         const date = new Date().toISOString().split('T')[0];
-        
+
         // Primero verificar si existe el registro
         const checkQuery = 'SELECT id FROM Calificaciones WHERE tarea_id = ? AND estudiante_id = ?';
-        
+
         connection.query(checkQuery, [taskId, studentId], (checkErr, checkResults) => {
             if (checkErr) {
                 console.error('Error al verificar registro:', checkErr);
@@ -561,7 +580,7 @@ function getTaskSubmissions(taskId, res) {
         RIGHT JOIN Usuarios u ON c.estudiante_id = u.id AND c.tarea_id = ?
         WHERE u.rol = 'estudiante'
     `;
-    
+
     connection.query(query, [taskId], (err, results) => {
         if (err) {
             console.error('Error al obtener submissions:', err);
@@ -577,7 +596,7 @@ function getTaskSubmissions(taskId, res) {
 function updateTaskStatus(taskId, body, res) {
     const { estado } = JSON.parse(body);
     const query = 'UPDATE Tareas SET estado = ? WHERE id = ?';
-    
+
     connection.query(query, [estado, taskId], (err, result) => {
         if (err) {
             sendResponse(res, 500, { error: 'Error al actualizar el estado de la tarea' });
@@ -591,7 +610,7 @@ function updateSubmissionStatus(body, res) {
     try {
         console.log('Body recibido:', body);
         const { taskId, studentId, estado } = JSON.parse(body);
-        
+
         console.log('Datos a procesar:', { taskId, studentId, estado });
 
         // Verificar que tenemos todos los datos necesarios
@@ -602,7 +621,7 @@ function updateSubmissionStatus(body, res) {
         }
 
         const checkQuery = 'SELECT id FROM Calificaciones WHERE tarea_id = ? AND estudiante_id = ?';
-        
+
         connection.query(checkQuery, [taskId, studentId], (checkErr, checkResults) => {
             if (checkErr) {
                 console.error('Error en checkQuery:', checkErr);
@@ -625,18 +644,18 @@ function updateSubmissionStatus(body, res) {
                         END
                     WHERE tarea_id = ? AND estudiante_id = ?
                 `;
-                
+
                 connection.query(updateQuery, [estado, estado, estado, taskId, studentId], (updateErr) => {
                     if (updateErr) {
                         console.error('Error en updateQuery:', updateErr);
                         sendResponse(res, 500, { error: 'Error al actualizar el estado' });
                         return;
                     }
-                    
+
                     console.log('Estado actualizado exitosamente');
-                    sendResponse(res, 200, { 
+                    sendResponse(res, 200, {
                         success: true,
-                        message: 'Estado actualizado con éxito' 
+                        message: 'Estado actualizado con éxito'
                     });
                 });
             } else {
@@ -646,18 +665,18 @@ function updateSubmissionStatus(body, res) {
                     (tarea_id, estudiante_id, estado, calificacion, fecha_calificacion) 
                     VALUES (?, ?, ?, NULL, NULL)
                 `;
-                
+
                 connection.query(insertQuery, [taskId, studentId, estado], (insertErr) => {
                     if (insertErr) {
                         console.error('Error en insertQuery:', insertErr);
                         sendResponse(res, 500, { error: 'Error al crear el registro' });
                         return;
                     }
-                    
+
                     console.log('Nuevo registro creado exitosamente');
-                    sendResponse(res, 201, { 
+                    sendResponse(res, 201, {
                         success: true,
-                        message: 'Estado creado con éxito' 
+                        message: 'Estado creado con éxito'
                     });
                 });
             }
@@ -733,8 +752,8 @@ const server = http.createServer((req, res) => {
     const { method, url } = req;
     let body = '';
 
-    req.on('data', chunk => { 
-        body += chunk.toString(); 
+    req.on('data', chunk => {
+        body += chunk.toString();
     });
 
     req.on('end', () => {
@@ -774,22 +793,22 @@ const server = http.createServer((req, res) => {
                 const studentId = url.split('/')[4];
                 getStudentGradesWithAverage(studentId, res);
             } else if (url === '/api/listusers' && method === 'GET') {
-                listusers(req,res);
+                listusers(req, res);
                 return;
 
-            }else if (url === '/api/registerallkindausers' && method === 'POST'){
-                registerallkindausers(body,res);
-            }else if(url.startsWith('/api/edit-task/') && method === 'PUT'){
+            } else if (url === '/api/registerallkindausers' && method === 'POST') {
+                registerallkindausers(body, res);
+            } else if (url.startsWith('/api/edit-task/') && method === 'PUT') {
                 const taskId = url.split('/')[3];
-                editTask(taskId,body,res);
-            }else if(url.startsWith('/api/delete-task/') && method === 'DELETE'){
+                editTask(taskId, body, res);
+            } else if (url.startsWith('/api/delete-task/') && method === 'DELETE') {
                 const taskId = url.split('/')[3];
-                deletetask(taskId,res);
-            }else if(url === '/api/listtask' && method === 'GET'){
+                deletetask(taskId, res);
+            } else if (url === '/api/listtask' && method === 'GET') {
                 listTasks(res);
             }
             else if (url === '/api/professor/add-grade' && method === 'POST') {
-                    addGrade(body, res);
+                addGrade(body, res);
             } else if (url === '/api/students' && method === 'GET') {
                 getStudents(res);
             } else if (url.startsWith('/api/task-submissions/') && method === 'GET') {
@@ -799,8 +818,11 @@ const server = http.createServer((req, res) => {
                 const taskId = url.split('/')[3];
                 updateTaskStatus(taskId, body, res);
             } else if (url === '/api/update-submission-status' && method === 'POST') {
-    updateSubmissionStatus(body, res);
-}
+                updateSubmissionStatus(body, res);
+            } else if (url === '/api/logout' && method === 'POST') {
+                handleLogout(req, res);
+                return;
+            }
             else {
                 sendResponse(res, 404, { error: 'Ruta no encontrada' });
             }
